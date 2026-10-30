@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片部位标注工具</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1c1f25; --panel2:#22262e; --line:#2e333c;
+    --text:#e7e9ee; --muted:#98a0ad; --accent:#4da3ff; --accent2:#22c55e;
+    --danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; display:flex; height:100vh; overflow:hidden;
+    background:var(--bg); color:var(--text);
+    font:14px/1.45 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  }
+
+  /* ---------- 左侧面板 ---------- */
+  aside{
+    width:320px; flex:0 0 320px; display:flex; flex-direction:column;
+    background:var(--panel); border-right:1px solid var(--line);
+  }
+  aside header{padding:14px 16px 10px; border-bottom:1px solid var(--line)}
+  aside h1{margin:0 0 2px; font-size:15px; font-weight:600; letter-spacing:.3px}
+  aside .sub{color:var(--muted); font-size:12px}
+
+  .section{padding:12px 16px; border-bottom:1px solid var(--line)}
+  .section-title{
+    font-size:12px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.6px; margin-bottom:8px;
+  }
+
+  .row{display:flex; gap:8px}
+  button{
+    font:inherit; color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:8px; padding:7px 10px;
+    cursor:pointer; transition:.15s; white-space:nowrap;
+  }
+  button:hover{background:#2b303a; border-color:#3b424e}
+  button.primary{background:var(--accent); border-color:var(--accent); color:#08131f; font-weight:600}
+  button.primary:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent}
+  button:disabled{opacity:.45; cursor:not-allowed}
+  input[type=text]{
+    font:inherit; color:var(--text); background:#15181d;
+    border:1px solid var(--line); border-radius:8px; padding:7px 10px; width:100%;
+    outline:none;
+  }
+  input[type=text]:focus{border-color:var(--accent)}
+
+  /* 部位列表 */
+  #partList{overflow:auto; flex:1; min-height:0; padding:8px}
+  .part-item{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; margin-bottom:6px;
+    border:1px solid var(--line); border-radius:9px; background:var(--panel2);
+    cursor:pointer;
+  }
+  .part-item:hover{border-color:#3b424e}
+  .part-item.active{border-color:var(--accent); background:#1d2836; box-shadow:0 0 0 1px var(--accent) inset}
+  .part-item .name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .part-item .count{
+    font-size:11px; color:var(--muted); background:#15181d;
+    border:1px solid var(--line); border-radius:20px; padding:1px 7px;
+  }
+  .part-item.active .count{color:var(--accent); border-color:#2b4c74}
+  .part-item .del{
+    background:transparent; border:0; color:var(--muted); padding:2px 4px;
+    border-radius:6px; line-height:1;
+  }
+  .part-item .del:hover{color:#fff; background:var(--danger)}
+
+  .empty-hint{color:var(--muted); font-size:12px; padding:10px; line-height:1.7}
+  .tips{
+    margin-top:10px; padding:9px 10px; border:1px solid var(--line); border-radius:9px;
+    background:#15181d; color:var(--muted); font-size:11.5px; line-height:1.9;
+  }
+  .tips b{color:var(--text); font-weight:600}
+
+  /* 部位条目：可折叠的选区子列表 */
+  .part-item .caret{
+    flex:0 0 auto; width:14px; text-align:center; padding:0;
+    background:transparent; border:0; color:var(--muted); font-size:11px;
+    line-height:1; transition:transform .15s;
+  }
+  .part-item .caret.open{transform:rotate(90deg)}
+  .part-item .caret:hover{color:var(--text); background:transparent}
+  .sub-list{margin:-2px 0 8px 18px; padding-left:10px; border-left:1px solid #2b303a}
+  .sub-item{
+    display:flex; align-items:center; gap:6px; padding:4px 6px;
+    border:1px solid transparent; border-radius:6px; cursor:pointer; font-size:12.5px;
+  }
+  .sub-item:hover{background:#20242c}
+  .sub-item.active{background:#1d2836; border-color:var(--accent)}
+  .sub-item .sub-name{
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#c3cad6;
+    font-variant-numeric:tabular-nums;
+  }
+  .sub-item.active .sub-name{color:var(--text)}
+  .sub-item.is-hidden .sub-name{color:#6f7885; text-decoration:line-through}
+  .sub-item .eye{
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    background:transparent; border:0; color:var(--muted); padding:2px; border-radius:5px;
+  }
+  .sub-item .eye:hover{color:var(--text); background:#2b303a}
+  .sub-item .eye.off{color:#5a6270}
+  .sub-item .eye.off:hover{color:var(--accent)}
+  .sub-empty{color:#6f7885; font-size:11.5px; padding:4px 6px}
+
+  /* ---------- 右侧画布 ---------- */
+  main{flex:1; display:flex; flex-direction:column; min-width:0}
+  .toolbar{
+    display:flex; align-items:center; gap:10px; padding:10px 14px;
+    border-bottom:1px solid var(--line); background:var(--panel);
+    flex-wrap:wrap;
+  }
+  .toolbar .status{color:var(--muted); font-size:12px; margin-left:auto}
+  .toolbar .status b{color:var(--accent); font-weight:600}
+  .toolbar .hint{color:#6f7885; font-size:11.5px; border-left:1px solid var(--line); padding-left:10px}
+  .zoom-group{display:flex; align-items:center; gap:4px; border:1px solid var(--line); border-radius:8px; padding:2px}
+  .zoom-group button{border:0; background:transparent; padding:5px 8px; border-radius:6px}
+  .zoom-group #zoomLabel{
+    min-width:58px; text-align:center; font-size:12px; color:var(--text);
+    font-variant-numeric:tabular-nums;
+  }
+
+  #stageWrap{
+    flex:1; overflow:hidden; position:relative;
+    background:
+      linear-gradient(45deg,#191c21 25%,transparent 25%,transparent 75%,#191c21 75%),
+      linear-gradient(45deg,#191c21 25%,#1b1e23 25%,#1b1e23 75%,#191c21 75%);
+    background-size:24px 24px; background-position:0 0,12px 12px;
+  }
+  #stage{
+    position:absolute; display:none; left:0; top:0; line-height:0;
+    box-shadow:0 8px 30px rgba(0,0,0,.55);
+  }
+  #stage.show{display:block}
+  #img{display:block; width:100%; height:100%; user-select:none; -webkit-user-drag:none}
+  #layer{position:absolute; inset:0; cursor:crosshair; touch-action:none}
+
+  .rect{
+    position:absolute; border:1.5px solid var(--accent); border-radius:3px;
+    background:rgba(77,163,255,.14); pointer-events:auto; cursor:move;
+  }
+  .rect .tag{
+    position:absolute; left:0; top:0; transform:translateY(-100%);
+    font-size:11px; line-height:1.4; color:#08131f; background:var(--accent);
+    padding:1px 5px; border-radius:4px 4px 4px 0; white-space:nowrap;
+    pointer-events:none;
+  }
+  .rect .coords{
+    position:absolute; left:0; bottom:0; font-size:10px; line-height:1.3;
+    color:#fff; background:rgba(10,14,20,.72); padding:1px 4px;
+    border-radius:0 4px 0 3px; white-space:nowrap; display:none;
+    pointer-events:none;
+  }
+  .rect:hover .coords{display:block}
+  .rect .kill{
+    position:absolute; right:-9px; top:-9px; width:16px; height:16px; padding:0; z-index:4;
+    border-radius:50%; border:1px solid #0b1017; background:var(--danger);
+    color:#fff; font-size:11px; line-height:1; display:none; align-items:center; justify-content:center;
+    cursor:pointer;
+  }
+  .rect:hover .kill{display:flex}
+  .rect.selected{outline:1.5px solid #fff; outline-offset:1px}
+  .rect.draft{border-style:dashed; cursor:crosshair}
+  .rect.is-hidden{display:none}
+
+  .rect .handle{
+    position:absolute; width:9px; height:9px; z-index:3; display:none;
+    background:#fff; border:1px solid var(--accent); border-radius:2px;
+    transform:translate(-50%,-50%); pointer-events:auto;
+  }
+  .rect.selected .handle{display:block}
+  .h-nw{left:0;   top:0;    cursor:nwse-resize}
+  .h-n{ left:50%; top:0;    cursor:ns-resize}
+  .h-ne{left:100%;top:0;    cursor:nesw-resize}
+  .h-e{ left:100%;top:50%;  cursor:ew-resize}
+  .h-se{left:100%;top:100%; cursor:nwse-resize}
+  .h-s{ left:50%; top:100%; cursor:ns-resize}
+  .h-sw{left:0;   top:100%; cursor:nesw-resize}
+  .h-w{ left:0;   top:50%;  cursor:ew-resize}
+
+  /* 空格按住 / 平移中 */
+  body.space-held #layer, body.space-held .rect{cursor:grab}
+  body.panning, body.panning #layer, body.panning .rect{cursor:grabbing}
+
+  /* JSON 预览 */
+  .json-panel{
+    border-top:1px solid var(--line); background:var(--panel);
+    height:34vh; flex:0 0 auto; display:flex; flex-direction:column;
+  }
+  .json-panel .head{
+    display:flex; align-items:center; gap:8px; padding:8px 14px;
+    border-bottom:1px solid var(--line); font-size:12px; color:var(--muted);
+  }
+  .json-panel .head .spacer{margin-left:auto}
+  pre{
+    margin:0; padding:12px 14px; overflow:auto; flex:1;
+    font:12px/1.6 "Cascadia Code",Consolas,monospace; color:#c9d4e3;
+    background:#111419; white-space:pre;
+  }
+
+  .toast{
+    position:fixed; left:50%; bottom:26px; transform:translate(-50%,12px);
+    background:#0b0e13; border:1px solid var(--line); color:var(--text);
+    padding:9px 16px; border-radius:10px; font-size:13px; opacity:0;
+    transition:.25s; pointer-events:none; box-shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+  .toast.show{opacity:1; transform:translate(-50%,0)}
+  .drop{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    border:2px dashed #39404c; border-radius:14px; padding:40px 26px; text-align:center;
+    color:var(--muted); cursor:pointer; max-width:420px;
+  }
+  .drop:hover{border-color:var(--accent); color:var(--text)}
+  .drop strong{color:var(--text); display:block; margin-bottom:6px; font-size:15px}
+</style>
+</head>
+<body>
+
+<aside>
+  <header>
+    <h1>图片部位标注</h1>
+    <div class="sub">框选部位 → 自动换算成百分比 → 导出 JSON</div>
+  </header>
+
+  <div class="section">
+    <div class="section-title">1. 部位名称</div>
+    <div class="row">
+      <input id="partInput" type="text" placeholder="如：头部、胸部、尾巴…" autocomplete="off">
+      <button id="addPartBtn" class="primary">添加</button>
+    </div>
+  </div>
+
+  <div class="section" style="padding-bottom:6px">
+    <div class="section-title">2. 选中部位后框选</div>
+  </div>
+
+  <div id="partList"></div>
+
+  <div class="section" style="border-bottom:0">
+    <div class="row">
+      <button id="importBtn" class="ghost" style="flex:1">导入 JSON</button>
+      <button id="clearBtn" class="ghost" style="flex:1">清空标注</button>
+    </div>
+    <input id="fileJson" type="file" accept=".json,application/json" hidden>
+    <input id="fileImg" type="file" accept="image/*" hidden>
+    <div class="tips">
+      <b>Alt + 滚轮</b>：以鼠标为中心缩放<br>
+      <b>空格 + 拖拽</b>：平移画面（中键拖拽同样可以）<br>
+      <b>拖拽框内</b>：移动框；<b>拖拽角点</b>：调整大小<br>
+      <b>Ctrl + 拖拽</b>：在已有框内部新建框<br>
+      <b>点部位左侧箭头</b>：展开该部位的选区（手臂1、手臂2…）<br>
+      <b>眼睛图标</b>：隐藏某个选区，便于框选它下面的重叠区域<br>
+      <b>Delete</b>：删除选中的框
+    </div>
+  </div>
+</aside>
+
+<main>
+  <div class="toolbar">
+    <button id="openImgBtn" class="primary">打开图片</button>
+    <button id="resetImgBtn" class="ghost" disabled>重新选择图片</button>
+    <div class="zoom-group">
+      <button id="zoomOutBtn" title="缩小">−</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomInBtn" title="放大">+</button>
+      <button id="zoomFitBtn" title="适应窗口">适应</button>
+      <button id="zoomOneBtn" title="图片原始像素 1:1">1:1</button>
+    </div>
+    <div class="hint">Alt+滚轮缩放 · 空格+拖拽平移</div>
+    <div class="status" id="status">尚未加载图片</div>
+  </div>
+
+  <div id="stageWrap">
+    <div class="drop" id="dropHint">
+      <strong>点击打开图片</strong>
+      或将图片拖拽到此处（支持 PNG / JPG / WEBP，图片不会被上传）
+    </div>
+    <div id="stage">
+      <img id="img" alt="">
+      <div id="layer"></div>
+    </div>
+  </div>
+
+  <div class="json-panel">
+    <div class="head">
+      <span>JSON 结果</span>
+      <span class="spacer"></span>
+      <button id="copyBtn" class="ghost">复制</button>
+      <button id="downloadBtn" class="ghost">下载 config.json</button>
+    </div>
+    <pre id="jsonOut">{}</pre>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const stageWrap = $("stageWrap");
+  const stage = $("stage");
+  const img = $("img");
+  const layer = $("layer");
+  const partInput = $("partInput");
+  const partList = $("partList");
+  const jsonOut = $("jsonOut");
+  const statusEl = $("status");
+  const dropHint = $("dropHint");
+  const fileImg = $("fileImg");
+  const fileJson = $("fileJson");
+  const zoomLabel = $("zoomLabel");
+
+  const state = {
+    imgLoaded: false,
+    parts: [],          // {id, name, rects:[{x1,y1,x2,y2}]}  坐标均为 0~1
+    activeId: null,
+    selectedRect: null, // {partId, index}
+    draft: null,        // 正在新建的框
+    transform: null,    // 正在移动/缩放的框
+    pan: null,          // 正在平移
+    zoom: 1,            // 相对“适应窗口”的缩放倍数
+    fitScale: 1,        // 适应窗口时 1 图像像素 = 多少屏幕像素
+    view: {x: 0, y: 0}, // 平移偏移（相对居中位置）
+    spaceDown: false
+  };
+
+  let uid = 0;
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const clamp01 = v => clamp(v, 0, 1);
+
+  /* ---------------- 工具函数 ---------------- */
+  function toast(msg){
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(()=>t.classList.remove("show"), 1800);
+  }
+
+  const round2 = n => Math.round(n * 100) / 100;
+
+  function activePart(){
+    return state.parts.find(p => p.id === state.activeId) || null;
+  }
+
+  function uniqueName(name){
+    let base = name, i = 2;
+    while(state.parts.some(p => p.name === name)) name = base + "(" + i++ + ")";
+    return name;
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  function coordsText(r){
+    return 'x ' + round2(r.x1) + '~' + round2(r.x2) + ' · y ' + round2(r.y1) + '~' + round2(r.y2);
+  }
+
+  /* ---------------- 部位管理 ---------------- */
+  function addPart(name){
+    name = (name || "").trim();
+    if(!name){ toast("请输入部位名称"); return; }
+    const p = {id: ++uid, name: uniqueName(name), rects: [], expanded: true};
+    state.parts.push(p);
+    state.activeId = p.id;
+    renderParts(); renderJson();
+    toast("已添加部位：" + p.name);
+  }
+
+  function removePart(id){
+    const idx = state.parts.findIndex(p => p.id === id);
+    if(idx < 0) return;
+    state.parts.splice(idx, 1);
+    if(state.activeId === id){
+      state.activeId = state.parts.length ? state.parts[Math.max(0, idx - 1)].id : null;
+    }
+    state.selectedRect = null;
+    renderParts(); renderJson(); renderRects();
+  }
+
+  function selectPart(id){
+    state.activeId = id;
+    state.selectedRect = null;
+    renderParts(); renderRects();
+  }
+
+  /* ---------------- 部位列表（可折叠，内含各选区） ---------------- */
+  const EYE_ON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+  const EYE_OFF = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12z" opacity=".5"/><path d="M3.5 3.5l17 17"/></svg>';
+
+  function selectRect(ref){
+    const part = state.parts.find(p => p.id === ref.partId);
+    const rect = part && part.rects[ref.index];
+    if(!rect) return;
+    rect.hidden = false;            // 从列表点选时自动取消隐藏，保证看得见
+    part.expanded = true;
+    state.selectedRect = ref;
+    state.activeId = ref.partId;
+    renderParts(); renderRects();
+  }
+
+  function renderParts(){
+    partList.innerHTML = "";
+    if(!state.parts.length){
+      partList.innerHTML = '<div class="empty-hint">还没有部位。<br>在上方输入名称并点击「添加」，<br>然后选中它，在图片上拖拽框选。</div>';
+      updateStatus();
+      return;
+    }
+
+    for(const p of state.parts){
+      // 部位行
+      const item = document.createElement("div");
+      item.className = "part-item" + (p.id === state.activeId ? " active" : "");
+      item.innerHTML =
+        '<button class="caret" title="展开 / 折叠该部位的选区">▸</button>' +
+        '<span class="name"></span>' +
+        '<span class="count">' + p.rects.length + '</span>' +
+        '<button class="del" title="删除该部位">✕</button>';
+      const caret = item.querySelector(".caret");
+      if(p.expanded) caret.classList.add("open");
+      item.querySelector(".name").textContent = p.name;
+
+      caret.addEventListener("click", e => {
+        e.stopPropagation();
+        p.expanded = !p.expanded;
+        renderParts();
+      });
+      item.addEventListener("click", () => selectPart(p.id));
+      item.querySelector(".del").addEventListener("click", e => {
+        e.stopPropagation();
+        removePart(p.id);
+      });
+      partList.appendChild(item);
+
+      // 展开的选区子列表（手臂1、手臂2…）
+      if(p.expanded){
+        const sub = document.createElement("div");
+        sub.className = "sub-list";
+        if(!p.rects.length){
+          const empty = document.createElement("div");
+          empty.className = "sub-empty";
+          empty.textContent = "暂无选区";
+          sub.appendChild(empty);
+        }
+        p.rects.forEach((r, i) => {
+          const row = document.createElement("div");
+          const isSel = state.selectedRect &&
+            state.selectedRect.partId === p.id && state.selectedRect.index === i;
+          row.className = "sub-item" + (isSel ? " active" : "") + (r.hidden ? " is-hidden" : "");
+          row.innerHTML =
+            '<span class="sub-name"></span>' +
+            '<button class="eye' + (r.hidden ? " off" : "") + '" title="' +
+              (r.hidden ? "显示该选区" : "隐藏该选区") + '">' +
+              (r.hidden ? EYE_OFF : EYE_ON) + '</button>';
+          row.querySelector(".sub-name").textContent = p.name + (i + 1);
+          row.addEventListener("click", () => selectRect({partId: p.id, index: i}));
+          row.querySelector(".eye").addEventListener("click", e => {
+            e.stopPropagation();
+            r.hidden = !r.hidden;
+            renderParts(); renderRects();
+          });
+          sub.appendChild(row);
+        });
+        partList.appendChild(sub);
+      }
+    }
+    updateStatus();
+
+    const act = partList.querySelector(".sub-item.active");
+    if(act && typeof act.scrollIntoView === "function") act.scrollIntoView({block: "nearest"});
+  }
+
+  function updateStatus(){
+    if(!state.imgLoaded){ statusEl.innerHTML = "尚未加载图片"; return; }
+    const p = activePart();
+    const total = state.parts.reduce((n, x) => n + x.rects.length, 0);
+    statusEl.innerHTML = p
+      ? '当前部位：<b>' + escapeHtml(p.name) + '</b> · 共 ' + total + ' 个框'
+      : '请先在左侧选中一个部位';
+  }
+
+  /* ---------------- 缩放 / 视图 ---------------- */
+  function computeFitScale(){
+    const pad = 48;
+    const availW = Math.max(80, stageWrap.clientWidth - pad);
+    const availH = Math.max(80, stageWrap.clientHeight - pad);
+    if(!img.naturalWidth || !img.naturalHeight) return 1;
+    return Math.min(availW / img.naturalWidth, availH / img.naturalHeight, 4);
+  }
+
+  function stageSize(){
+    const s = state.fitScale * state.zoom;
+    return {s, w: img.naturalWidth * s, h: img.naturalHeight * s};
+  }
+
+  // 视野偏移量 state.view 以“图片居中”为原点，限制图片至少有一部分留在画布内
+  function clampView(){
+    const {w, h} = stageSize();
+    const W = stageWrap.clientWidth, H = stageWrap.clientHeight;
+    const keepX = Math.min(60, w), keepY = Math.min(60, h);
+    const L0 = (W - w) / 2, T0 = (H - h) / 2;
+    state.view.x = clamp(state.view.x, -(w - keepX) - L0, (W - keepX) - L0);
+    state.view.y = clamp(state.view.y, -(h - keepY) - T0, (H - keepY) - T0);
+  }
+
+  function layout(){
+    if(!state.imgLoaded) return;
+    const {w, h, s} = stageSize();
+    const W = stageWrap.clientWidth, H = stageWrap.clientHeight;
+    stage.style.width = w + "px";
+    stage.style.height = h + "px";
+    stage.style.left = ((W - w) / 2 + state.view.x) + "px";
+    stage.style.top = ((H - h) / 2 + state.view.y) + "px";
+    zoomLabel.textContent = Math.round(s * 100) + "%";
+  }
+
+  function setZoom(z){
+    state.zoom = clamp(z, 0.05, 20);
+    clampView(); layout();
+  }
+
+  // 以屏幕坐标 (cx, cy) 为锚点缩放，锚点下的图像位置保持不动
+  function zoomAt(cx, cy, factor){
+    if(!state.imgLoaded) return;
+    const before = stage.getBoundingClientRect();
+    if(!before.width || !before.height) return;
+    const wr = stageWrap.getBoundingClientRect();
+    const fx = (cx - before.left) / before.width;
+    const fy = (cy - before.top) / before.height;
+
+    const z = clamp(state.zoom * factor, 0.05, 20);
+    if(z === state.zoom) return;
+    state.zoom = z;
+
+    const {w, h} = stageSize();
+    const W = stageWrap.clientWidth, H = stageWrap.clientHeight;
+    state.view.x = (cx - wr.left) - fx * w - (W - w) / 2;
+    state.view.y = (cy - wr.top) - fy * h - (H - h) / 2;
+    clampView(); layout();
+  }
+
+  function zoomAtCenter(factor){
+    const wr = stageWrap.getBoundingClientRect();
+    zoomAt(wr.left + wr.width / 2, wr.top + wr.height / 2, factor);
+  }
+
+  /* ---------------- 图片加载 ---------------- */
+  function loadImageFile(file){
+    if(!file || !file.type.startsWith("image/")){ toast("请选择图片文件"); return; }
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      state.imgLoaded = true;
+      state.zoom = 1;
+      state.view = {x: 0, y: 0};
+      state.fitScale = computeFitScale();
+      stage.classList.add("show");
+      dropHint.style.display = "none";
+      $("resetImgBtn").disabled = false;
+      layout();
+      renderRects();
+      updateStatus();
+      // 布局稳定后再校准一次“适应窗口”比例
+      requestAnimationFrame(() => {
+        state.fitScale = computeFitScale();
+        clampView(); layout();
+      });
+      toast("图片已加载：" + img.naturalWidth + "×" + img.naturalHeight);
+    };
+    img.onerror = () => { toast("图片读取失败"); };
+    img.src = url;
+  }
+
+  /* ---------------- 几何辅助 ---------------- */
+  function relPoint(e){
+    const r = layer.getBoundingClientRect();
+    if(!r.width || !r.height) return {x: 0, y: 0};
+    return {
+      x: clamp01((e.clientX - r.left) / r.width),
+      y: clamp01((e.clientY - r.top) / r.height)
+    };
+  }
+
+  function normRect(a, b){
+    return {
+      x1: Math.min(a.x, b.x), x2: Math.max(a.x, b.x),
+      y1: Math.min(a.y, b.y), y2: Math.max(a.y, b.y)
+    };
+  }
+
+  function positionEl(el, r){
+    el.style.left = (r.x1 * 100) + "%";
+    el.style.top = (r.y1 * 100) + "%";
+    el.style.width = ((r.x2 - r.x1) * 100) + "%";
+    el.style.height = ((r.y2 - r.y1) * 100) + "%";
+  }
+
+  // 命中测试：几何判断鼠标下方的框（用于单击选中、以及无激活部位时的兜底）
+  function hitTest(clientX, clientY){
+    const els = layer.querySelectorAll(".rect:not(.draft)");
+    for(let i = els.length - 1; i >= 0; i--){
+      const r = els[i].getBoundingClientRect();
+      if(clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom){
+        return els[i]._ref || null;
+      }
+    }
+    return null;
+  }
+
+  function applySelection(ref){
+    state.selectedRect = ref;
+    state.activeId = ref.partId;
+    const part = state.parts.find(p => p.id === ref.partId);
+    if(part) part.expanded = true;
+    renderParts();
+    renderRects();
+  }
+
+  /* ---------------- 自由变换（移动 / 缩放已有框） ---------------- */
+  function beginTransform(e, rectEl){
+    const ref = rectEl._ref;
+    const part = state.parts.find(p => p.id === ref.partId);
+    const rect = part && part.rects[ref.index];
+    if(!rect) return;
+
+    const handleEl = e.target.closest ? e.target.closest(".handle") : null;
+
+    state.selectedRect = ref;
+    state.activeId = ref.partId;
+    part.expanded = true;
+    renderParts();
+
+    [...layer.querySelectorAll(".rect.selected")].forEach(el => el.classList.remove("selected"));
+    rectEl.classList.add("selected");
+
+    const lr = layer.getBoundingClientRect();
+    if(!lr.width || !lr.height) return;
+
+    state.transform = {
+      kind: handleEl ? "resize" : "move",
+      handle: handleEl ? handleEl.dataset.h : null,
+      partId: ref.partId,
+      index: ref.index,
+      start: {x1: rect.x1, y1: rect.y1, x2: rect.x2, y2: rect.y2},
+      px: {x: e.clientX, y: e.clientY},
+      size: {w: lr.width, h: lr.height},
+      el: rectEl
+    };
+    try { layer.setPointerCapture(e.pointerId); } catch(err) { /* 合成事件可能不支持 */ }
+  }
+
+  function updateTransform(e){
+    const t = state.transform;
+    const part = state.parts.find(p => p.id === t.partId);
+    if(!part) return;
+    const rect = part.rects[t.index];
+    if(!rect) return;
+
+    const dx = (e.clientX - t.px.x) / t.size.w;
+    const dy = (e.clientY - t.px.y) / t.size.h;
+    const s = t.start;
+    const MIN = 0.01;
+    let next;
+
+    if(t.kind === "move"){
+      const w = s.x2 - s.x1, h = s.y2 - s.y1;
+      const x1 = clamp(s.x1 + dx, 0, 1 - w);
+      const y1 = clamp(s.y1 + dy, 0, 1 - h);
+      next = {x1, y1, x2: x1 + w, y2: y1 + h};
+    }else{
+      next = {x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2};
+      const hd = t.handle || "";
+      if(hd.indexOf("w") >= 0) next.x1 = clamp(s.x1 + dx, 0, s.x2 - MIN);
+      if(hd.indexOf("e") >= 0) next.x2 = clamp(s.x2 + dx, s.x1 + MIN, 1);
+      if(hd.indexOf("n") >= 0) next.y1 = clamp(s.y1 + dy, 0, s.y2 - MIN);
+      if(hd.indexOf("s") >= 0) next.y2 = clamp(s.y2 + dy, s.y1 + MIN, 1);
+    }
+
+    Object.assign(rect, next);
+    positionEl(t.el, next);
+    const coords = t.el.querySelector(".coords");
+    if(coords) coords.textContent = coordsText(next);
+  }
+
+  function endTransform(commit){
+    const t = state.transform;
+    if(!t) return;
+    state.transform = null;
+    if(!commit){
+      const part = state.parts.find(p => p.id === t.partId);
+      if(part && part.rects[t.index]) Object.assign(part.rects[t.index], t.start);
+    }
+    renderRects(); renderJson();
+  }
+
+  /* ---------------- 新建框 ---------------- */
+  let downPt = null;
+
+  layer.addEventListener("pointerdown", e => {
+    if(e.button !== 0) return;
+    if(!state.imgLoaded){ toast("请先加载图片"); return; }
+    if(e.target.closest && e.target.closest(".kill")) return;
+
+    const rectEl = e.target.closest ? e.target.closest(".rect:not(.draft)") : null;
+
+    // 已有框上按下：移动 / 拖角点缩放（Ctrl 按住则改为在其内部新建框）
+    if(rectEl && !e.ctrlKey){
+      beginTransform(e, rectEl);
+      return;
+    }
+
+    const part = activePart();
+    if(!part){
+      const hit = rectEl ? rectEl._ref : hitTest(e.clientX, e.clientY);
+      if(hit) applySelection(hit);
+      else toast("请先在左侧添加并选中一个部位");
+      return;
+    }
+
+    try { layer.setPointerCapture(e.pointerId); } catch(err) { /* ignore */ }
+    downPt = {x: e.clientX, y: e.clientY};
+    state.draft = {partId: part.id, start: relPoint(e), el: null, rect: null};
+  }, true);
+
+  layer.addEventListener("pointermove", e => {
+    if(state.transform){ updateTransform(e); return; }
+
+    const d = state.draft;
+    if(!d) return;
+    if(!d.el){
+      if(Math.abs(e.clientX - downPt.x) + Math.abs(e.clientY - downPt.y) < 3) return;
+      const part = state.parts.find(p => p.id === d.partId);
+      if(!part) return;
+      d.el = makeDraftEl(part.name + (part.rects.length + 1));
+    }
+    d.rect = normRect(d.start, relPoint(e));
+    positionEl(d.el, d.rect);
+  }, true);
+
+  layer.addEventListener("pointerup", e => {
+    if(state.transform){
+      endTransform(true);
+      return;
+    }
+
+    const d = state.draft;
+    if(!d) return;
+    state.draft = null;
+    if(d.el) d.el.remove();
+
+    // 没有产生拖拽 ==> 视为单击，用于选中/取消选中已有框
+    if(!d.el){
+      const hit = hitTest(e.clientX, e.clientY);
+      if(hit) applySelection(hit);
+      else if(state.selectedRect){ state.selectedRect = null; renderRects(); }
+      return;
+    }
+
+    // 以松手位置为终点，避免最后一次 pointermove 之后的位置丢失
+    const rect = normRect(d.start, relPoint(e));
+    const r = layer.getBoundingClientRect();
+    if((rect.x2 - rect.x1) * r.width < 4 || (rect.y2 - rect.y1) * r.height < 4) return;
+
+    const part = state.parts.find(p => p.id === d.partId);
+    if(!part) return;
+    part.rects.push({x1: rect.x1, y1: rect.y1, x2: rect.x2, y2: rect.y2});
+    part.expanded = true;
+    state.selectedRect = {partId: part.id, index: part.rects.length - 1};
+    renderParts(); renderRects(); renderJson();
+  }, true);
+
+  layer.addEventListener("pointercancel", () => {
+    if(state.transform) endTransform(false);
+    if(state.draft){
+      if(state.draft.el) state.draft.el.remove();
+      state.draft = null;
+    }
+  });
+
+  function makeDraftEl(name){
+    const el = document.createElement("div");
+    el.className = "rect draft";
+    el.innerHTML = '<span class="tag">' + escapeHtml(name) + '</span>';
+    layer.appendChild(el);
+    return el;
+  }
+
+  /* ---------------- 渲染已有框 ---------------- */
+  const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+
+  function renderRects(){
+    [...layer.querySelectorAll(".rect:not(.draft)")].forEach(el => el.remove());
+    if(!state.imgLoaded) return;
+
+    for(const p of state.parts){
+      p.rects.forEach((r, i) => {
+        const el = document.createElement("div");
+        const isSel = state.selectedRect && state.selectedRect.partId === p.id && state.selectedRect.index === i;
+        el.className = "rect" + (isSel ? " selected" : "") + (r.hidden ? " is-hidden" : "");
+        positionEl(el, r);
+        el.innerHTML =
+          '<span class="tag">' + escapeHtml(p.name + (i + 1)) + '</span>' +
+          '<span class="coords">' + coordsText(r) + '</span>' +
+          '<button class="kill" title="删除该框">✕</button>' +
+          HANDLES.map(h => '<span class="handle h-' + h + '" data-h="' + h + '"></span>').join('');
+        el.querySelector(".kill").addEventListener("click", e => {
+          e.stopPropagation();
+          p.rects.splice(i, 1);
+          state.selectedRect = null;
+          renderParts(); renderRects(); renderJson();
+        });
+        el._ref = {partId: p.id, index: i};
+        layer.appendChild(el);
+      });
+    }
+  }
+
+  /* ---------------- JSON ---------------- */
+  function toObject(){
+    const out = {};
+    for(const p of state.parts){
+      if(!p.rects.length) continue;
+      const conv = r => ({
+        x: {min: round2(r.x1), max: round2(r.x2)},
+        y: {min: round2(r.y1), max: round2(r.y2)}
+      });
+      out[p.name] = p.rects.length === 1 ? conv(p.rects[0]) : p.rects.map(conv);
+    }
+    return out;
+  }
+
+  function renderJson(){
+    jsonOut.textContent = JSON.stringify(toObject(), null, 2);
+  }
+
+  function importJson(text){
+    let data;
+    try { data = JSON.parse(text); }
+    catch(err){ toast("JSON 解析失败：" + err.message); return; }
+    if(!data || typeof data !== "object" || Array.isArray(data)){
+      toast("JSON 结构不符：应为 {部位名: {...}}");
+      return;
+    }
+    const added = [];
+    for(const [name, val] of Object.entries(data)){
+      const list = Array.isArray(val) ? val : [val];
+      const rects = [];
+      let ok = true;
+      for(const v of list){
+        const xs = v && v.x, ys = v && v.y;
+        if(!xs || !ys || !isFinite(xs.min) || !isFinite(xs.max) || !isFinite(ys.min) || !isFinite(ys.max)){
+          ok = false; break;
+        }
+        rects.push({
+          x1: clamp01(+xs.min), x2: clamp01(+xs.max),
+          y1: clamp01(+ys.min), y2: clamp01(+ys.max)
+        });
+      }
+      if(!ok){ toast("跳过无效部位：" + name); continue; }
+      const p = {id: ++uid, name: uniqueName(String(name)), rects, expanded: true};
+      state.parts.push(p);
+      if(!state.activeId) state.activeId = p.id;
+      added.push(p.name);
+    }
+    renderParts(); renderRects(); renderJson();
+    if(added.length) toast("已导入 " + added.length + " 个部位");
+  }
+
+  /* ---------------- 平移（空格 / 中键） ---------------- */
+  stageWrap.addEventListener("pointerdown", e => {
+    if(!(state.spaceDown || e.button === 1)) return;
+    if(!state.imgLoaded) return;
+    e.preventDefault();
+    e.stopPropagation();
+    state.pan = {
+      x: e.clientX, y: e.clientY,
+      vx: state.view.x, vy: state.view.y
+    };
+    document.body.classList.add("panning");
+    try { stageWrap.setPointerCapture(e.pointerId); } catch(err) { /* ignore */ }
+  }, true);
+
+  stageWrap.addEventListener("pointermove", e => {
+    const p = state.pan;
+    if(!p) return;
+    state.view.x = p.vx + (e.clientX - p.x);
+    state.view.y = p.vy + (e.clientY - p.y);
+    clampView(); layout();
+  }, true);
+
+  function endPan(){
+    if(!state.pan) return;
+    state.pan = null;
+    document.body.classList.remove("panning");
+  }
+  stageWrap.addEventListener("pointerup", endPan, true);
+  stageWrap.addEventListener("pointercancel", endPan, true);
+
+  // Alt + 滚轮缩放
+  stageWrap.addEventListener("wheel", e => {
+    if(!e.altKey) return;
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.pow(1.12, -e.deltaY / 100));
+  }, {passive: false});
+
+  /* ---------------- 事件绑定 ---------------- */
+  $("addPartBtn").addEventListener("click", () => {
+    addPart(partInput.value);
+    partInput.value = "";
+    partInput.focus();
+  });
+
+  partInput.addEventListener("keydown", e => {
+    if(e.key === "Enter"){
+      addPart(partInput.value);
+      partInput.value = "";
+    }
+  });
+
+  $("openImgBtn").addEventListener("click", () => fileImg.click());
+  $("resetImgBtn").addEventListener("click", () => fileImg.click());
+  dropHint.addEventListener("click", () => fileImg.click());
+  fileImg.addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if(f) loadImageFile(f);
+    e.target.value = "";
+  });
+
+  $("zoomInBtn").addEventListener("click", () => zoomAtCenter(1.25));
+  $("zoomOutBtn").addEventListener("click", () => zoomAtCenter(0.8));
+  $("zoomFitBtn").addEventListener("click", () => {
+    if(!state.imgLoaded) return;
+    state.view = {x: 0, y: 0};
+    setZoom(1);
+  });
+  $("zoomOneBtn").addEventListener("click", () => {
+    if(!state.imgLoaded) return;
+    zoomAtCenter((1 / state.fitScale) / state.zoom);
+  });
+
+  // 拖拽图片
+  stageWrap.addEventListener("dragover", e => { e.preventDefault(); });
+  stageWrap.addEventListener("drop", e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) loadImageFile(f);
+  });
+
+  $("clearBtn").addEventListener("click", () => {
+    if(!state.parts.length) return;
+    if(!confirm("确定清空所有部位与框选结果？")) return;
+    state.parts = [];
+    state.activeId = null;
+    state.selectedRect = null;
+    renderParts(); renderRects(); renderJson();
+  });
+
+  $("importBtn").addEventListener("click", () => fileJson.click());
+  fileJson.addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => importJson(String(reader.result));
+    reader.readAsText(f, "utf-8");
+    e.target.value = "";
+  });
+
+  $("copyBtn").addEventListener("click", async () => {
+    const text = jsonOut.textContent;
+    try{
+      await navigator.clipboard.writeText(text);
+      toast("已复制到剪贴板");
+    }catch(err){
+      // 降级方案
+      const ta = document.createElement("textarea");
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); toast("已复制到剪贴板"); }
+      catch(e2){ toast("复制失败，请手动选择文本"); }
+      ta.remove();
+    }
+  });
+
+  $("downloadBtn").addEventListener("click", () => {
+    const blob = new Blob([jsonOut.textContent], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "config.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  /* ---------------- 键盘 ---------------- */
+  const isTyping = el => el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+
+  window.addEventListener("keydown", e => {
+    if(e.code === "Space" && !isTyping(e.target)){
+      e.preventDefault();
+      if(!state.spaceDown){
+        state.spaceDown = true;
+        document.body.classList.add("space-held");
+      }
+    }
+    if(e.key === "Escape" && state.draft){
+      if(state.draft.el) state.draft.el.remove();
+      state.draft = null;
+    }
+    if((e.key === "Delete" || e.key === "Backspace") && state.selectedRect && !isTyping(e.target)){
+      if(e.key === "Backspace") e.preventDefault();
+      const p = state.parts.find(x => x.id === state.selectedRect.partId);
+      if(p){
+        p.rects.splice(state.selectedRect.index, 1);
+        state.selectedRect = null;
+        renderParts(); renderRects(); renderJson();
+      }
+    }
+  });
+
+  window.addEventListener("keyup", e => {
+    if(e.code === "Space"){
+      state.spaceDown = false;
+      document.body.classList.remove("space-held");
+    }
+  });
+
+  window.addEventListener("blur", () => {
+    state.spaceDown = false;
+    document.body.classList.remove("space-held");
+  });
+
+  // 窗口大小变化时重新计算“适应窗口”的比例
+  window.addEventListener("resize", () => {
+    if(!state.imgLoaded) return;
+    state.fitScale = computeFitScale();
+    clampView(); layout();
+  });
+
+  renderParts();
+  renderJson();
+})();
+</script>
+</body>
+</html>
