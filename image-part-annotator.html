@@ -71,6 +71,22 @@
     border-radius:6px; line-height:1;
   }
   .part-item .del:hover{color:#fff; background:var(--danger)}
+  .part-item .grip{
+    flex:0 0 auto; color:#5a6270; font-size:12px; line-height:1;
+    cursor:grab; user-select:none; padding:0 1px;
+  }
+  .part-item .grip:hover{color:var(--text)}
+  .part-item .grip:active{cursor:grabbing}
+  .part-item.dragging{opacity:.4}
+  .part-item .edit{
+    background:transparent; border:0; color:var(--muted); padding:2px 4px;
+    border-radius:6px; line-height:1;
+  }
+  .part-item .edit:hover{color:var(--text); background:#2b303a}
+  .part-item .name-input{
+    flex:1; min-width:0; width:auto; font-size:12.5px; padding:3px 6px;
+  }
+  .drop-line{height:2px; border-radius:2px; background:var(--accent); margin:-4px 2px 4px}
 
   .empty-hint{color:var(--muted); font-size:12px; padding:10px; line-height:1.7}
   .tips{
@@ -294,7 +310,7 @@
       <button id="copyBtn" class="ghost">复制</button>
       <button id="downloadBtn" class="ghost">下载 config.json</button>
     </div>
-    <pre id="jsonOut">{}</pre>
+    <pre id="jsonOut">[]</pre>
   </div>
 </main>
 
@@ -351,10 +367,59 @@
     return state.parts.find(p => p.id === state.activeId) || null;
   }
 
-  function uniqueName(name){
+  function uniqueName(name, excludeId){
     let base = name, i = 2;
-    while(state.parts.some(p => p.name === name)) name = base + "(" + i++ + ")";
+    while(state.parts.some(p => p.name === name && p.id !== excludeId)) name = base + "(" + i++ + ")";
     return name;
+  }
+
+  /* 重命名：把名称就地换成输入框，回车 / 失焦保存，Esc 取消 */
+  let renameSeq = 0;
+
+  function startRename(p, item){
+    const nameEl = item.querySelector(".name");
+    if(!nameEl) return;
+
+    const seq = ++renameSeq;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "name-input";
+    input.value = p.name;
+    nameEl.replaceWith(input);
+    item.draggable = false;
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = save => {
+      if(finished) return;
+      finished = true;
+      const v = input.value.trim();
+      if(save){
+        if(v){
+          p.name = uniqueName(v, p.id);
+          toast("已重命名为：" + p.name);
+        } else {
+          toast("名称不能为空");
+        }
+      }
+      // 若已有更新的一次重命名在进行中，就只更新数据，避免覆盖掉那个输入框
+      if(seq === renameSeq){
+        renderParts(); renderRects(); renderJson();
+      } else {
+        renderJson();
+      }
+    };
+
+    input.addEventListener("click", e => e.stopPropagation());
+    input.addEventListener("mousedown", e => e.stopPropagation());
+    input.addEventListener("keydown", e => {
+      e.stopPropagation();
+      if(e.key === "Enter"){ e.preventDefault(); finish(true); }
+      else if(e.key === "Escape"){ e.preventDefault(); finish(false); }
+    });
+    // 失焦后延迟提交，避免打断用户紧接着的点击
+    input.addEventListener("blur", () => setTimeout(() => finish(true), 0));
   }
 
   function escapeHtml(s){
@@ -421,18 +486,44 @@
       const item = document.createElement("div");
       item.className = "part-item" + (p.id === state.activeId ? " active" : "");
       item.innerHTML =
+        '<span class="grip" title="按住拖动可调整顺序">⠿</span>' +
         '<button class="caret" title="展开 / 折叠该部位的选区">▸</button>' +
         '<span class="name"></span>' +
         '<span class="count">' + p.rects.length + '</span>' +
+        '<button class="edit" title="重命名该部位">✎</button>' +
         '<button class="del" title="删除该部位">✕</button>';
       const caret = item.querySelector(".caret");
       if(p.expanded) caret.classList.add("open");
       item.querySelector(".name").textContent = p.name;
 
+      // 拖动排序：从左侧手柄或名称上按住即可拖动整个部位
+      item.addEventListener("mousedown", e => {
+        item.draggable = !!(e.target.closest && e.target.closest(".grip, .name"));
+      });
+      item.addEventListener("mouseup", () => { item.draggable = false; });
+      item.addEventListener("dragstart", e => {
+        dragPartId = p.id;
+        dropIndex = null;
+        item.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", p.name); } catch(err) { /* ignore */ }
+      });
+      item.addEventListener("dragend", () => {
+        dragPartId = null;
+        dropIndex = null;
+        clearDropMark();
+        item.draggable = false;
+        item.classList.remove("dragging");
+      });
+
       caret.addEventListener("click", e => {
         e.stopPropagation();
         p.expanded = !p.expanded;
         renderParts();
+      });
+      item.querySelector(".edit").addEventListener("click", e => {
+        e.stopPropagation();
+        startRename(p, item);
       });
       item.addEventListener("click", () => selectPart(p.id));
       item.querySelector(".del").addEventListener("click", e => {
@@ -478,6 +569,63 @@
     const act = partList.querySelector(".sub-item.active");
     if(act && typeof act.scrollIntoView === "function") act.scrollIntoView({block: "nearest"});
   }
+
+  /* ---------------- 部位拖拽排序 ---------------- */
+  let dragPartId = null;
+  let dropIndex = null;
+
+  const partItems = () => [...partList.querySelectorAll(".part-item")];
+
+  function insertIndexFromY(y){
+    const items = partItems();
+    for(let i = 0; i < items.length; i++){
+      const r = items[i].getBoundingClientRect();
+      if(y < r.top + r.height / 2) return i;
+    }
+    return items.length;
+  }
+
+  function clearDropMark(){
+    const line = partList.querySelector(".drop-line");
+    if(line) line.remove();
+  }
+
+  function markDrop(idx){
+    clearDropMark();
+    const line = document.createElement("div");
+    line.className = "drop-line";
+    const items = partItems();
+    if(idx >= items.length) partList.appendChild(line);
+    else partList.insertBefore(line, items[idx]);
+  }
+
+  partList.addEventListener("dragover", e => {
+    if(dragPartId === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const idx = insertIndexFromY(e.clientY);
+    if(idx !== dropIndex){ dropIndex = idx; markDrop(idx); }
+  });
+
+  partList.addEventListener("drop", e => {
+    if(dragPartId === null) return;
+    e.preventDefault();
+    const from = state.parts.findIndex(p => p.id === dragPartId);
+    let to = dropIndex === null ? insertIndexFromY(e.clientY) : dropIndex;
+    dragPartId = null;
+    dropIndex = null;
+    clearDropMark();
+    if(from < 0) return;
+    if(to > from) to--;
+    if(to === from) return;
+    const [moved] = state.parts.splice(from, 1);
+    state.parts.splice(to, 0, moved);
+    renderParts(); renderJson();
+  });
+
+  partList.addEventListener("dragleave", e => {
+    if(!partList.contains(e.relatedTarget)) clearDropMark();
+  });
 
   function updateStatus(){
     if(!state.imgLoaded){ statusEl.innerHTML = "尚未加载图片"; return; }
@@ -826,14 +974,14 @@
 
   /* ---------------- JSON ---------------- */
   function toObject(){
-    const out = {};
+    const out = [];
     for(const p of state.parts){
       if(!p.rects.length) continue;
       const conv = r => ({
         x: {min: round2(r.x1), max: round2(r.x2)},
         y: {min: round2(r.y1), max: round2(r.y2)}
       });
-      out[p.name] = p.rects.length === 1 ? conv(p.rects[0]) : p.rects.map(conv);
+      out.push({name: p.name, rects: p.rects.map(conv)});
     }
     return out;
   }
@@ -846,13 +994,15 @@
     let data;
     try { data = JSON.parse(text); }
     catch(err){ toast("JSON 解析失败：" + err.message); return; }
-    if(!data || typeof data !== "object" || Array.isArray(data)){
-      toast("JSON 结构不符：应为 {部位名: {...}}");
+    if(!Array.isArray(data)){
+      toast("JSON 结构不符：应为 [{name, rects}] 数组");
       return;
     }
     const added = [];
-    for(const [name, val] of Object.entries(data)){
-      const list = Array.isArray(val) ? val : [val];
+    for(const entry of data){
+      const name = entry && entry.name;
+      const list = entry && entry.rects;
+      if(!name || !Array.isArray(list)) { toast("跳过无效部位：" + String(name)); continue; }
       const rects = [];
       let ok = true;
       for(const v of list){
@@ -865,7 +1015,7 @@
           y1: clamp01(+ys.min), y2: clamp01(+ys.max)
         });
       }
-      if(!ok){ toast("跳过无效部位：" + name); continue; }
+      if(!ok || !rects.length){ toast("跳过无效部位：" + name); continue; }
       const p = {id: ++uid, name: uniqueName(String(name)), rects, expanded: true};
       state.parts.push(p);
       if(!state.activeId) state.activeId = p.id;
